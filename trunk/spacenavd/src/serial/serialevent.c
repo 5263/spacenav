@@ -16,30 +16,33 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef DEV_SERIAL_H_
-#define DEV_SERIAL_H_
+#include <stdlib.h>
+#include "serialevent.h"
 
-#include "event.h"
-#include "serial/serialconstants.h"
+int evpool_size=0;
+static struct event *ev_free_list;
 
+struct event *alloc_event(void)
+{
+  struct event *ev;
+  
+  if(ev_free_list) {
+    ev = ev_free_list;
+    ev_free_list = ev->next;
+  } else {
+    ev = malloc(sizeof *ev);
+    evpool_size++;
+  }
+  return ev;
+}
 
-enum {UNKNOWN, BALL_1003, BALL_2003B, BALL_2003C, BALL_3003C, BALL_4000FLX, BALL_5000FLX, MOUSE_CLASSIC, MOUSE_PLUS, MOUSE_PLUS_XT};
-
-struct Device{
-  char name[DEVICE_NAME_MAX];
-  char version_string[VERSION_STRING_MAX];
-  int modelId;
-  int (*open_func)(const char *devfile);
-  int (*close_func)();
-  int (*read_func)(struct dev_input *inp);
-  int (*get_fd_func)();
-};
-
-int open_dev_serial(const char *devfile);
-void close_dev_serial(void);
-int read_dev_serial(struct dev_input *inp);
-void clear_device();
-void derive_device_name_model();
-void setup_device();
-int get_device_id();
-#endif	/* DEV_SERIAL_H_ */
+void free_event(struct event *ev)
+{
+  if(evpool_size > 512) {
+    free(ev);
+    evpool_size--;
+  } else {
+    ev->next = ev_free_list;
+    ev_free_list = ev;
+  }
+}
