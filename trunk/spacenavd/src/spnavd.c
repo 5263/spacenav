@@ -146,7 +146,7 @@ int main(int argc, char **argv)
 			struct timeval tv, *timeout = 0;
 			if(cfg.repeat_msec >= 0 && !in_deadzone()) {
 				tv.tv_sec = cfg.repeat_msec / 1000;
-				tv.tv_usec = cfg.repeat_msec % 1000;
+				tv.tv_usec = (cfg.repeat_msec % 1000) * 1000;
 				timeout = &tv;
 			}
 
