@@ -6,6 +6,7 @@
 #include <assimp/cimport.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <assimp/material.h>
 #include "scenefmt.h"
 
 int convert_file(const char *fname);
@@ -49,6 +50,7 @@ int convert_file(const char *fname)
 	struct light *light = 0;
 	char *out_fname, *dot;
 	int i, j;
+	struct header hdr;
 
 	if(!(scn = aiImportFile(fname, AIFLAGS))) {
 		fprintf(stderr, "failed to import scene file: %s\n", fname);
@@ -81,11 +83,44 @@ int convert_file(const char *fname)
 	}
 
 	for(i=0; i<(int)scn->mNumMaterials; i++) {
-		/* TODO */
-		mat[i].diffuse[0] = mat[i].diffuse[1] = mat[i].diffuse[2] = mat[i].diffuse[3] = 1.0;
-		mat[i].specular[0] = mat[i].specular[1] = mat[i].specular[2] = 0.0;
+		struct aiColor4D color;
+		float shin_str;
+		unsigned int one = 1;
+
+		printf("material[%d]:\n", i);
+
+		if(aiGetMaterialColor(scn->mMaterials[i], AI_MATKEY_COLOR_DIFFUSE, &color) != 0) {
+			color.r = color.g = color.b = 1.0;
+		}
+		mat[i].diffuse[0] = color.r;
+		mat[i].diffuse[1] = color.g;
+		mat[i].diffuse[2] = color.b;
+		mat[i].diffuse[3] = 1.0;
+
+		printf("  diffuse: %f %f %f\n", color.r, color.g, color.b);
+
+		if(aiGetMaterialColor(scn->mMaterials[i], AI_MATKEY_COLOR_SPECULAR, &color) != 0) {
+			color.r = color.g = color.b = 0.0;
+		}
+		mat[i].specular[0] = color.r;
+		mat[i].specular[1] = color.g;
+		mat[i].specular[2] = color.b;
 		mat[i].specular[3] = 1.0;
-		mat[i].shininess = 60.0;
+
+		printf("  specular: %f %f %f\n", color.r, color.g, color.b);
+
+		if(aiGetMaterialFloatArray(scn->mMaterials[i], AI_MATKEY_SHININESS_STRENGTH, &shin_str, &one) != 0) {
+			printf("FOO1\n");
+			shin_str = 1.0;
+		}
+		if(aiGetMaterialFloatArray(scn->mMaterials[i], AI_MATKEY_SHININESS, &mat[i].shininess, &one) != 0) {
+			printf("FOO2\n");
+			mat[i].shininess = 0.0;
+		}
+		mat[i].shininess *= shin_str * 0.001 * 128.0;
+
+		printf("  shininess: %f (str: %f)\n", mat[i].shininess, shin_str);
+
 		memset(mat[i].texfname, 0, sizeof mat[i].texfname);
 	}
 
@@ -99,7 +134,7 @@ int convert_file(const char *fname)
 
 		mesh[i].hdr.num_verts = nverts;
 		mesh[i].hdr.num_tri = nfaces;
-		mesh[i].hdr.matid = 0;
+		mesh[i].hdr.matid = scn->mMeshes[i]->mMaterialIndex;
 		mesh[i].hdr.xform[0][0] = mesh[i].hdr.xform[1][1] = mesh[i].hdr.xform[2][2] = mesh[i].hdr.xform[3][3] = 1.0;
 		mesh[i].hdr.data_size = nverts * 3 * sizeof(float) * 4 + nfaces * 3 * sizeof(unsigned int);
 
@@ -179,8 +214,7 @@ int convert_file(const char *fname)
 		light[i].color[3] = 1.0;
 	}
 
-	// dump everything
-	struct header hdr;
+	/* dump everything */
 	memcpy(hdr.magic, "SPNAVSCN", 8);
 	hdr.num_materials = scn->mNumMaterials;
 	hdr.num_meshes = scn->mNumMeshes;
@@ -240,7 +274,7 @@ err:
 
 int write_mesh(FILE *fp, struct mesh *mesh)
 {
-	printf("writing mesh with %d vertices and %d triangles\n", mesh->hdr.num_verts, mesh->hdr.num_tri);
+	printf("writing mesh with %d vertices and %d triangles (mat: %d)\n", mesh->hdr.num_verts, mesh->hdr.num_tri, mesh->hdr.matid);
 	if(fwrite(&mesh->hdr, sizeof mesh->hdr, 1, fp) < 1) {
 		fprintf(stderr, "failed to write mesh header\n");
 		return -1;

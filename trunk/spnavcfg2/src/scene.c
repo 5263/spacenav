@@ -6,6 +6,8 @@
 #include <GL/glew.h>
 #include "scene.h"
 
+static void setup_material(const struct material *mat);
+
 int load_scene(struct scene *scn, const char *fname)
 {
 	int i;
@@ -134,6 +136,7 @@ void draw_scene(struct scene *scn)
 	int i;
 
 	for(i=0; i<scn->num_meshes; i++) {
+		setup_material(scn->materials + scn->meshes[i].hdr.matid);
 		draw_mesh(scn, scn->meshes + i);
 	}
 }
@@ -153,4 +156,13 @@ void draw_mesh(struct scene *scn, struct mesh *m)
 	glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_NORMAL_ARRAY);
 	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+}
+
+static void setup_material(const struct material *mat)
+{
+	float shininess = mat->shininess <= 0 ? 0 : (mat->shininess > 128 ? 128 : mat->shininess);
+
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mat->diffuse);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat->specular);
+	glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
 }
