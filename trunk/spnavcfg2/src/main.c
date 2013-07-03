@@ -248,6 +248,11 @@ void motion(int x, int y)
 
 void sball_motion(int x, int y, int z)
 {
+	/* glut specifies a range of -1000 to 1000, spnav goes -500 to 500 */
+	x /= 2;
+	y /= 2;
+	z /= 2;
+
 	movex = x;
 #ifdef __APPLE__
 	movey = -z;
@@ -261,6 +266,11 @@ void sball_motion(int x, int y, int z)
 
 void sball_rotate(int rx, int ry, int rz)
 {
+	/* glut specifies a range of -1800 to 1800, spnav goes -500 to 500 */
+	rx = 500 * rx / 1800;
+	ry = 500 * ry / 1800;
+	rz = 500 * rz / 1800;
+
 	rotx = rx;
 #ifdef __APPLE__
 	roty = -rz;
