@@ -136,13 +136,14 @@ void draw_scene(struct scene *scn)
 	int i;
 
 	for(i=0; i<scn->num_meshes; i++) {
-		setup_material(scn->materials + scn->meshes[i].hdr.matid);
 		draw_mesh(scn, scn->meshes + i);
 	}
 }
 
 void draw_mesh(struct scene *scn, struct mesh *m)
 {
+	setup_material(scn->materials + m->hdr.matid);
+
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glEnableClientState(GL_NORMAL_ARRAY);
 	glEnableClientState(GL_TEXTURE_COORD_ARRAY);

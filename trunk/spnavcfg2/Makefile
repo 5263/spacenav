@@ -5,8 +5,8 @@ obj = $(src:.c=.o)
 dep = $(obj:.o=.d)
 bin = spnavcfg2
 
-CFLAGS = -pedantic -Wall -g
-LDFLAGS = $(libgl)
+CFLAGS = -std=gnu99 -pedantic -Wall -g
+LDFLAGS = $(libgl) -lspnav
 
 ifeq ($(shell uname -s), Darwin)
 	libgl = -framework OpenGL -framework GLUT -lGLEW

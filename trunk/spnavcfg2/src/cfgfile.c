@@ -1,0 +1,1 @@
+../spacenavd/src/cfgfile.c
