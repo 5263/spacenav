@@ -131,7 +131,12 @@ static inline int mtx_init(mtx_t *mtx, int type)
 		pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_NORMAL);
 	}
 	if(type & mtx_timed) {
+#ifdef PTHREAD_MUTEX_TIMED_NP
 		pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_TIMED_NP);
+#else
+		fprintf(stderr, "C11THREADS ERROR: timed mutexes unsupported on this platform\n");
+		abort();
+#endif
 	}
 	if(type & mtx_recursive) {
 		pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <unistd.h>
 #include <GL/glew.h>
@@ -33,6 +34,9 @@ void keyb(unsigned char key, int x, int y);
 void keyb_up(unsigned char key, int x, int y);
 void mouse(int bn, int state, int x, int y);
 void motion(int x, int y);
+void sball_motion(int x, int y, int z);
+void sball_rotate(int rx, int ry, int rz);
+void sball_button(int bn, int state);
 unsigned int load_texture(const char *fname);
 
 void spnav_thread_func(void *arg);
@@ -46,9 +50,24 @@ float movex, movey, movez;
 float rotx, roty, rotz;
 int button[128];
 
+int ignore_spnav_errors;
+int use_glut_spaceball;
+
 int main(int argc, char **argv)
 {
+	int i;
 	float ldir[] = {-1, 1, 2, 0};
+
+	for(i=1; i<argc; i++) {
+		if(strcmp(argv[i], "-dummy") == 0) {
+			ignore_spnav_errors = 1;
+		} else if(strcmp(argv[i], "-glut-spaceball") == 0) {
+			use_glut_spaceball = 1;
+		} else {
+			fprintf(stderr, "invalid argument: %s\n", argv[i]);
+			return 1;
+		}
+	}
 
 	glutInit(&argc, argv);
 	glutInitWindowSize(1024, 768);
@@ -62,6 +81,11 @@ int main(int argc, char **argv)
 	glutKeyboardUpFunc(keyb_up);
 	glutMouseFunc(mouse);
 	glutMotionFunc(motion);
+	if(use_glut_spaceball) {
+		glutSpaceballMotionFunc(sball_motion);
+		glutSpaceballRotateFunc(sball_rotate);
+		glutSpaceballButtonFunc(sball_button);
+	}
 
 	glewInit();
 
@@ -87,15 +111,17 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	/* setup a pipe to signal the spacenav thread when we want to quit */
-	if(pipe(pipefd) == -1) {
-		perror("failed to create self-pipe");
-		return 1;
-	}
+	if(!use_glut_spaceball) {
+		/* setup a pipe to signal the spacenav thread when we want to quit */
+		if(pipe(pipefd) == -1) {
+			perror("failed to create self-pipe");
+			return 1;
+		}
 
-	if(thrd_create(&spnav_thread, spnav_thread_func, 0) == -1) {
-		perror("failed to spawn spacenav monitoring thread");
-		return 1;
+		if(thrd_create(&spnav_thread, spnav_thread_func, 0) == -1) {
+			perror("failed to spawn spacenav monitoring thread");
+			return 1;
+		}
 	}
 
 	atexit(cleanup);
@@ -106,9 +132,11 @@ int main(int argc, char **argv)
 void cleanup(void)
 {
 	/* signal the thread to quit, and join */
-	int res;
-	write(pipefd[1], pipefd, 1);
-	thrd_join(spnav_thread, &res);
+	if(!use_glut_spaceball) {
+		int res;
+		write(pipefd[1], pipefd, 1);
+		thrd_join(spnav_thread, &res);
+	}
 }
 
 void disp(void)
@@ -218,6 +246,36 @@ void motion(int x, int y)
 {
 }
 
+void sball_motion(int x, int y, int z)
+{
+	movex = x;
+#ifdef __APPLE__
+	movey = -z;
+	movez = -y;
+#else
+	movey = y;
+	movez = z;
+#endif
+	glutPostRedisplay();
+}
+
+void sball_rotate(int rx, int ry, int rz)
+{
+	rotx = rx;
+#ifdef __APPLE__
+	roty = -rz;
+	rotz = -ry;
+#else
+	roty = ry;
+	rotz = rz;
+#endif
+	glutPostRedisplay();
+}
+
+void sball_button(int bn, int state)
+{
+}
+
 unsigned int load_texture(const char *fname)
 {
 	unsigned int tex;
@@ -248,6 +306,9 @@ void spnav_thread_func(void *arg)
 
 	if(spnav_open() == -1) {
 		fprintf(stderr, "failed to connect to the spacenav daemon\n");
+		if(ignore_spnav_errors) {
+			thrd_exit(0);
+		}
 		exit(0);
 	}
 	sfd = spnav_fd();

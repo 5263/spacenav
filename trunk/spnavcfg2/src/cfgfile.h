@@ -1,1 +1,1 @@
-../spacenavd/src/cfgfile.h
+../../spacenavd/src/cfgfile.h
