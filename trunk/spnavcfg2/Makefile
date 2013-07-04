@@ -8,7 +8,9 @@ bin = spnavcfg2
 incpaths = -I/usr/local/include -I/usr/X11R6/include
 libpaths = -L/usr/local/lib -L/usr/X11R6/lib
 
-CFLAGS = -std=gnu99 -pedantic -Wall -g $(incpaths)
+opt = -O3 -ffast-math
+
+CFLAGS = -std=gnu99 -pedantic -Wall -g $(opt) $(incpaths)
 LDFLAGS = $(libpaths) $(libgl) -lspnav
 
 ifeq ($(shell uname -s), Darwin)

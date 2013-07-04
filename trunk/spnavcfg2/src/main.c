@@ -17,6 +17,7 @@
 #include "scene.h"
 #include "spnav.h"
 #include "image.h"
+#include "fblur.h"
 
 /* space navigator model parts */
 enum {
@@ -29,6 +30,8 @@ enum {
 
 void cleanup(void);
 void disp(void);
+void draw_space_navigator(void);
+void post_glow(void);
 void reshape(int x, int y);
 void keyb(unsigned char key, int x, int y);
 void keyb_up(unsigned char key, int x, int y);
@@ -37,14 +40,29 @@ void motion(int x, int y);
 void sball_motion(int x, int y, int z);
 void sball_rotate(int rx, int ry, int rz);
 void sball_button(int bn, int state);
+unsigned int create_texture(int xsz, int ysz, unsigned char *pixels);
 unsigned int load_texture(const char *fname);
+int next_pow2(int x);
+void resample_image(unsigned char *pixels, int xsz, int ysz, int factor, int brighten, int *nx, int *ny);
 
 void spnav_thread_func(void *arg);
+
+int width, height;
+unsigned char *framebuf;
+
+int opt_use_glow = 1;
 
 int pipefd[2];
 thrd_t spnav_thread;
 struct scene scn;
 unsigned int envmap, envmap_blur;
+unsigned int glow_tex;
+
+#define GLOW_SZ_DIV		6
+int tex_xsz, tex_ysz, glow_xsz, glow_ysz;
+
+int glow_iter = 3;
+int blur_size = 3;
 
 float movex, movey, movez;
 float rotx, roty, rotz;
@@ -106,6 +124,7 @@ int main(int argc, char **argv)
 	if(!(envmap_blur = load_texture("data/envmap_blurry.tga"))) {
 		return 1;
 	}
+	glow_tex = create_texture(64, 64, 0);	/* will fix the size in reshape */
 
 	if(load_scene(&scn, "data/spacenav.scene") == -1) {
 		return 1;
@@ -143,26 +162,64 @@ void disp(void)
 {
 	int i;
 
-	glClearColor(0.25, 0.25, 0.25, 1);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glTranslatef(0, 0, -8);
 	glRotatef(30, 1, 0, 0);
 	glRotatef(-25, 0, 1, 0);
 
-	/* LED light */
-	/*{
-		static const float lpos[] = {0, 0, 0, 1};
-		static const float led_color[] = {0.2, 0.4, 1.0, 1.0};
+	if(opt_use_glow) {
+		glow_xsz = width / GLOW_SZ_DIV;
+		glow_ysz = height / GLOW_SZ_DIV;
 
-		glLightfv(GL_LIGHT1, GL_POSITION, lpos);
-		glLightfv(GL_LIGHT1, GL_DIFFUSE, led_color);
-		glEnable(GL_LIGHT1);
-	}*/
+		glViewport(0, 0, glow_xsz, glow_ysz);
+
+		/* first render the LED into the render target */
+		glClearColor(0, 0, 0, 1);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		/* fill the zbuffer */
+		glColorMask(0, 0, 0, 0);
+		draw_space_navigator();
+		glColorMask(1, 1, 1, 1);
+
+		/* draw the led rim */
+		draw_mesh(&scn, scn.meshes + SPART_LEDGLOW);
+
+		glReadPixels(0, 0, glow_xsz, glow_ysz, GL_RGBA, GL_UNSIGNED_BYTE, framebuf);
+
+		glViewport(0, 0, width, height);
+	}
+
+	glClearColor(0.25, 0.25, 0.25, 1);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	draw_space_navigator();
+
+	if(opt_use_glow) {
+		/* add the glow */
+		for(i=0; i<glow_iter; i++) {
+			fast_blur(BLUR_BOTH, blur_size, (uint32_t*)framebuf, glow_xsz, glow_ysz);
+			glBindTexture(GL_TEXTURE_2D, glow_tex);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, glow_xsz, glow_ysz, GL_RGBA, GL_UNSIGNED_BYTE, framebuf);
+
+			post_glow();
+		}
+	}
+
+	glutSwapBuffers();
+	assert(glGetError() == GL_NO_ERROR);
+
+	/* TODO framerate monitor and limiter */
+}
+
+void draw_space_navigator(void)
+{
+	int i;
 
 	for(i=0; i<scn.num_meshes; i++) {
+		glPushAttrib(GL_ENABLE_BIT);
+
 		if(i == SPART_TOP || i == SPART_BASETOP || i == SPART_BASE) {
 			glEnable(GL_TEXTURE_2D);
 
@@ -196,34 +253,90 @@ void disp(void)
 			glDisable(GL_TEXTURE_2D);
 
 		} else if(i == SPART_LEDGLOW) {
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_ONE, GL_ONE);
-
-			draw_mesh(&scn, scn.meshes + i);
-			glDisable(GL_BLEND);
 
 		} else {
 			draw_mesh(&scn, scn.meshes + i);
 		}
 
-		if(i == SPART_TOP || i == SPART_BASETOP || i == SPART_BASE) {
-			glDisable(GL_TEXTURE_GEN_S);
-			glDisable(GL_TEXTURE_GEN_T);
-			glDisable(GL_TEXTURE_2D);
-		}
+		glPopAttrib();
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 	}
 
-	glutSwapBuffers();
-	assert(glGetError() == GL_NO_ERROR);
+	glDepthMask(0);
+	draw_mesh(&scn, scn.meshes + SPART_LEDGLOW);
+	glDepthMask(1);
+}
+
+void post_glow(void)
+{
+	float max_s = (float)glow_xsz / (float)tex_xsz;
+	float max_t = (float)glow_ysz / (float)tex_ysz;
+
+	glPushAttrib(GL_ENABLE_BIT);
+
+	glBlendFunc(GL_ONE, GL_ONE);
+	glEnable(GL_BLEND);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_LIGHTING);
+	glDisable(GL_DEPTH_TEST);
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, glow_tex);
+
+	glBegin(GL_QUADS);
+	glColor4f(1, 1, 1, 1);
+	glTexCoord2f(0, 0);
+	glVertex2f(-1, -1);
+	glTexCoord2f(max_s, 0);
+	glVertex2f(1, -1);
+	glTexCoord2f(max_s, max_t);
+	glVertex2f(1, 1);
+	glTexCoord2f(0, max_t);
+	glVertex2f(-1, 1);
+	glEnd();
+
+	glPopMatrix();
+	glMatrixMode(GL_MODELVIEW);
+	glPopMatrix();
+
+	glPopAttrib();
 }
 
 void reshape(int x, int y)
 {
+	width = x;
+	height = y;
 	glViewport(0, 0, x, y);
 
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	gluPerspective(45.0, (float)x / (float)y, 0.5, 500.0);
+
+	if(opt_use_glow) {
+		glow_xsz = x / GLOW_SZ_DIV;
+		glow_ysz = y / GLOW_SZ_DIV;
+		printf("glow image size: %dx%d\n", glow_xsz, glow_ysz);
+
+		/* resize the frame buffer */
+		free(framebuf);
+		if(!(framebuf = malloc(glow_xsz * glow_ysz * 4))) {
+			perror("failed to allocate frame buffer");
+			abort();
+		}
+
+		/* resize the large-enough-for-frame texture */
+		tex_xsz = next_pow2(glow_xsz);
+		tex_ysz = next_pow2(glow_ysz);
+		glBindTexture(GL_TEXTURE_2D, glow_tex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex_xsz, tex_ysz, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+	}
 }
 
 void keyb(unsigned char key, int x, int y)
@@ -231,6 +344,43 @@ void keyb(unsigned char key, int x, int y)
 	switch(key) {
 	case 27:
 		exit(0);
+
+	case 'g':
+		opt_use_glow = !opt_use_glow;
+		if(opt_use_glow) {
+			// re-validate the frame buffer and glow texture
+			reshape(width, height);
+		}
+		glutPostRedisplay();
+		break;
+
+	case '=':
+		printf("glow_iter: %d\n", ++glow_iter);
+		glutPostRedisplay();
+		break;
+
+	case '-':
+		if(--glow_iter < 1) {
+			glow_iter = 1;
+		} else {
+			printf("glow_iter: %d\n", glow_iter);
+			glutPostRedisplay();
+		}
+		break;
+
+	case ']':
+		printf("blur_size: %d\n", ++blur_size);
+		glutPostRedisplay();
+		break;
+
+	case '[':
+		if(--blur_size < 1) {
+			blur_size = 1;
+		} else {
+			printf("blur_size: %d\n", blur_size);
+			glutPostRedisplay();
+		}
+		break;
 	}
 }
 
@@ -286,6 +436,19 @@ void sball_button(int bn, int state)
 {
 }
 
+unsigned int create_texture(int xsz, int ysz, unsigned char *pixels)
+{
+	unsigned int tex;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, xsz, ysz, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels ? pixels : 0);
+	return tex;
+}
+
 unsigned int load_texture(const char *fname)
 {
 	unsigned int tex;
@@ -296,18 +459,48 @@ unsigned int load_texture(const char *fname)
 		return 0;
 	}
 
-	glGenTextures(1, &tex);
-	glBindTexture(GL_TEXTURE_2D, tex);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img->width, img->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img->pixels);
+	tex = create_texture(img->width, img->height, img->pixels);
 	free_image(img);
 
 	return tex;
 }
 
+void resample_image(unsigned char *pixels, int xsz, int ysz, int factor, int brighten, int *nx, int *ny)
+{
+	int i, j;
+	unsigned char *src = pixels;
+	unsigned char *dest = pixels;
+
+	if(factor <= 1) {
+		*nx = xsz;
+		*ny = ysz;
+		return;
+	}
+
+	/* resample by halving everything in place */
+	for(i=0; i<ysz; i+=2) {
+		for(j=0; j<xsz; j+=2) {
+			int r = (src[0] + src[4] + src[xsz * 4] + src[xsz * 4 + 4]) / 4;
+			int g = (src[1] + src[5] + src[xsz * 4 + 1] + src[xsz * 4 + 5]) / 4;
+			int b = (src[2] + src[6] + src[xsz * 4 + 2] + src[xsz * 4 + 6]) / 4;
+
+			if(brighten > 0) {
+				r += (r * brighten) / 255;
+				g += (g * brighten) / 255;
+				b += (b * brighten) / 255;
+			}
+
+			*dest++ = r > 255 ? 255 : r;
+			*dest++ = g > 255 ? 255 : g;
+			*dest++ = b > 255 ? 255 : b;
+			*dest++ = 255;
+			src += 8;
+		}
+		src += xsz * 4;
+	}
+
+	resample_image(pixels, xsz / 2, ysz / 2, factor - 1, brighten, nx, ny);
+}
 
 /* ---- spacenav monitoring thread ---- */
 void spnav_thread_func(void *arg)
@@ -372,4 +565,15 @@ void spnav_thread_func(void *arg)
 	}
 
 	spnav_close();
+}
+
+int next_pow2(int x)
+{
+	x--;
+	x = (x >> 1) | x;
+	x = (x >> 2) | x;
+	x = (x >> 4) | x;
+	x = (x >> 8) | x;
+	x = (x >> 16) | x;
+	return x + 1;
 }
