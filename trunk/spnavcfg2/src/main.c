@@ -71,6 +71,10 @@ int button[128];
 int ignore_spnav_errors;
 int use_glut_spaceball;
 
+float cam_phi = 30;
+float cam_theta = -25;
+float cam_dist = 8;
+
 int main(int argc, char **argv)
 {
 	int i;
@@ -164,9 +168,9 @@ void disp(void)
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	glTranslatef(0, 0, -8);
-	glRotatef(30, 1, 0, 0);
-	glRotatef(-25, 0, 1, 0);
+	glTranslatef(0, 0, -cam_dist);
+	glRotatef(cam_phi, 1, 0, 0);
+	glRotatef(-cam_theta, 0, 1, 0);
 
 	if(opt_use_glow) {
 		glow_xsz = width / GLOW_SZ_DIV;
@@ -388,12 +392,37 @@ void keyb_up(unsigned char key, int x, int y)
 {
 }
 
+static int bnstate[32];
+static int prev_x, prev_y;
+
 void mouse(int bn, int st, int x, int y)
 {
+	bnstate[bn - GLUT_LEFT_BUTTON] = st == GLUT_DOWN;
+	prev_x = x;
+	prev_y = y;
 }
 
 void motion(int x, int y)
 {
+	int dx = x - prev_x;
+	int dy = y - prev_y;
+	prev_x = x;
+	prev_y = y;
+
+	if(bnstate[0]) {
+		cam_theta += dx * 0.5;
+		cam_phi += dy * 0.5;
+
+		if(cam_phi < -90) cam_phi = -90;
+		if(cam_phi > 90) cam_phi = 90;
+		glutPostRedisplay();
+	}
+	if(bnstate[2]) {
+		cam_dist += dy * 0.1;
+
+		if(cam_dist < 0.0) cam_dist = 0.0;
+		glutPostRedisplay();
+	}
 }
 
 void sball_motion(int x, int y, int z)
