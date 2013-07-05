@@ -2,6 +2,18 @@
 #include <alloca.h>
 #include "fblur.h"
 
+#if  defined(__i386__) || defined(__ia64__) || defined(WIN32) || \
+    (defined(__alpha__) || defined(__alpha)) || \
+     defined(__arm__) || \
+    (defined(__mips__) && defined(__MIPSEL__)) || \
+     defined(__SYMBIAN32__) || \
+     defined(__x86_64__) || \
+     defined(__LITTLE_ENDIAN__)
+#define FBLUR_LITTLE_ENDIAN
+#else
+#define FBLUR_BIG_ENDIAN
+#endif
+
 /* some color packing/unpacking macros */
 #ifdef FBLUR_BIG_ENDIAN
 #define RSHIFT		24
