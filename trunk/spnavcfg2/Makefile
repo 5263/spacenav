@@ -10,8 +10,8 @@ libpaths = -L/usr/local/lib -L/usr/X11R6/lib
 
 opt = -O3 -ffast-math
 
-CFLAGS = -std=gnu99 -pedantic -Wall -g $(opt) $(incpaths)
-LDFLAGS = $(libpaths) $(libgl) -lspnav
+CFLAGS = -std=gnu89 -pedantic -Wall -g $(opt) $(incpaths)
+LDFLAGS = $(libpaths) $(libgl) -lspnav -lpthread
 
 ifeq ($(shell uname -s), Darwin)
 	libgl = -framework OpenGL -framework GLUT -lGLEW

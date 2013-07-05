@@ -1,7 +1,7 @@
 #ifndef FBLUR_H_
 #define FBLUR_H_
 
-#include <stdint.h>
+#include <inttypes.h>
 
 enum {
 	BLUR_BOTH,	/* blur in X and Y */

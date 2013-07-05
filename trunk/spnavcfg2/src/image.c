@@ -5,7 +5,7 @@
 #include "image.h"
 
 #ifndef _MSC_VER
-#include <stdint.h>
+#include <inttypes.h>
 #else
 typedef __int8	int8_t;
 typedef __int16	int16_t;
@@ -24,9 +24,21 @@ typedef unsigned __int32	uint32_t;
      defined(__LITTLE_ENDIAN__)
 /* little endian */
 #define read_int16_le(f)	read_int16(f)
+
+#define PACK_COLOR32(r,g,b,a) \
+	((((a) & 0xff) << 24) | \
+	 (((r) & 0xff) << 0) | \
+	 (((g) & 0xff) << 8) | \
+	 (((b) & 0xff) << 16))
 #else
 /* big endian */
 #define read_int16_le(f)	read_int16_inv(f)
+
+#define PACK_COLOR32(r,g,b,a) \
+	((((a) & 0xff) << 0) | \
+	 (((r) & 0xff) << 24) | \
+	 (((g) & 0xff) << 16) | \
+	 (((b) & 0xff) << 8))
 #endif	/* endian check */
 
 
@@ -220,11 +232,6 @@ static void *load_tga(FILE *fp, int *xsz, int *ysz)
 	return pix;
 }
 
-#define PACK_COLOR32(r,g,b,a) \
-	((((a) & 0xff) << 24) | \
-	 (((r) & 0xff) << 0) | \
-	 (((g) & 0xff) << 8) | \
-	 (((b) & 0xff) << 16))
 
 static uint32_t read_pixel(FILE *fp, int rdalpha)
 {

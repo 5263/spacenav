@@ -234,6 +234,7 @@ static void byteswap_materials(struct material *matarr, int num_mat)
 	for(i=0; i<num_mat; i++) {
 		for(j=0; j<4; j++) {
 			matarr[i].diffuse[j] = swap_float(matarr[i].diffuse[j]);
+			matarr[i].specular[j] = swap_float(matarr[i].specular[j]);
 		}
 		matarr[i].shininess = swap_float(matarr[i].shininess);
 	}
