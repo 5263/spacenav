@@ -13,10 +13,15 @@ opt = -O3 -ffast-math
 CFLAGS = -std=gnu89 -pedantic -Wall -g $(opt) $(incpaths)
 LDFLAGS = $(libpaths) $(libgl) -lspnav -lpthread
 
-ifeq ($(shell uname -s), Darwin)
+sys = $(shell uname -s)
+ifeq ($(sys), Darwin)
 	libgl = -framework OpenGL -framework GLUT -lGLEW
 else
 	libgl = -lGL -lGLU -lglut -lGLEW
+endif
+
+ifeq ($(sys), $(filter $(sys), IRIX IRIX64))
+	CC = gcc
 endif
 
 $(bin): $(obj)

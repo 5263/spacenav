@@ -18,6 +18,7 @@
 #include "spnav.h"
 #include "image.h"
 #include "fblur.h"
+#include "timer.h"
 
 /* space navigator model parts */
 enum {
@@ -165,6 +166,7 @@ void cleanup(void)
 void disp(void)
 {
 	int i;
+	unsigned int frame_time, start_msec = get_time_msec();
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
@@ -214,7 +216,15 @@ void disp(void)
 	glutSwapBuffers();
 	assert(glGetError() == GL_NO_ERROR);
 
-	/* TODO framerate monitor and limiter */
+	frame_time = get_time_msec() - start_msec;
+	/* if the framerate is less than 50fps (interval: 50 msec) disable the glow */
+	if(frame_time > 50) {
+		opt_use_glow = 0;
+	}
+	/* limit framerate to 40 fps */
+	if(frame_time < 25) {
+		usleep((25 - frame_time - 5) * 1000);
+	}
 }
 
 void draw_space_navigator(void)
@@ -352,7 +362,7 @@ void keyb(unsigned char key, int x, int y)
 	case 'g':
 		opt_use_glow = !opt_use_glow;
 		if(opt_use_glow) {
-			// re-validate the frame buffer and glow texture
+			/* re-validate the frame buffer and glow texture */
 			reshape(width, height);
 		}
 		glutPostRedisplay();
